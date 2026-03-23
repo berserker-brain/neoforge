@@ -1,4 +1,4 @@
-module github.com/HubHiveConnect/neoforge
+module github.com/berserker-brain/neoforge
 
 go 1.23.2
 

@@ -1,5 +1,3 @@
-//go:build integration
-
 package neoforge_test
 
 import (
