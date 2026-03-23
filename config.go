@@ -10,38 +10,26 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/config"
 )
 
-type Neo4jConfig struct {
-	URI      string
-	Username string
-	Password string
-	Database string
-}
-
-type Neo4j struct {
-	Driver   neo4j.DriverWithContext
-	Ctx      context.Context
-	Database string
-}
-
-func NewNeo4jConfig() *Neo4jConfig {
-	return &Neo4jConfig{
-		URI:      os.Getenv("NEO4J_URI"),
-		Username: os.Getenv("NEO4J_USERNAME"),
-		Password: os.Getenv("NEO4J_PASSWORD"),
+/// NewCypherRepository is a quick constructor for setting up a neo4j connection
+func NewCypherRepository() *CypherRepository {
+	uri := os.Getenv("NEO4J_URI")
+	username := os.Getenv("NEO4J_USERNAME")
+	password := os.Getenv("NEO4J_PASSWORD")
+	database := os.Getenv("NEO4J_DATABASE")
+	if uri == "" || username == "" || password == "" || database == "" {
+		panic("NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, and NEO4J_DATABASE must be set")
 	}
-}
 
-func NewNeo4j() *Neo4j {
-	driver, ctx := NewNeo4jConfig().NewDriver()
+	driver, ctx := NewDriver(uri, username, password)
 
-	return &Neo4j{
+	return &CypherRepository{
 		Driver:   driver,
 		Ctx:      ctx,
-		Database: os.Getenv("NEO4J_DATABASE"),
+		Database: database,
 	}
 }
 
-func (c *Neo4jConfig) NewDriver() (neo4j.DriverWithContext, context.Context) {
+func NewDriver(uri string, username string, password string) (neo4j.DriverWithContext, context.Context) {
 	ctx := context.Background()
 	config := func(conf *config.Config) {
 		conf.MaxConnectionLifetime = 60 * time.Minute
@@ -51,7 +39,7 @@ func (c *Neo4jConfig) NewDriver() (neo4j.DriverWithContext, context.Context) {
 		conf.SocketKeepalive = true
 	}
 
-	driver, err := neo4j.NewDriverWithContext(c.URI, neo4j.BasicAuth(c.Username, c.Password, ""), config)
+	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(username, password, ""), config)
 	if err != nil {
 		panic(err)
 	}

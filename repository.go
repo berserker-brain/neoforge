@@ -3,41 +3,37 @@ package neoforge
 import (
 	"errors"
 	"log"
-
+	"context"
 	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 type CypherRepository struct {
-	Database *Neo4j
-}
-
-func NewCypherRepository(db *Neo4j) *CypherRepository {
-	return &CypherRepository{
-		Database: db,
-	}
+	Driver   neo4j.DriverWithContext
+	Ctx      context.Context
+	Database string
 }
 
 func (cr *CypherRepository) RunQuery(cypher *CypherQuery) {
 	result, err := neo4j.ExecuteQuery(
-		cr.Database.Ctx, cr.Database.Driver,
+		cr.Ctx, cr.Driver,
 		cypher.Query,
 		cypher.Params,
 		neo4j.EagerResultTransformer,
-		neo4j.ExecuteQueryWithDatabase(cr.Database.Database),
+		neo4j.ExecuteQueryWithDatabase(cr.Database),
 	)
 
 	cr.parseNeo4jResults(result, err, cypher)
 }
 
 func (cr *CypherRepository) RunReadTransaction(readTransaction *CypherTransaction) error {
-	session := cr.Database.Driver.NewSession(cr.Database.Ctx, neo4j.SessionConfig{
-		DatabaseName: cr.Database.Database,
+	session := cr.Driver.NewSession(cr.Ctx, neo4j.SessionConfig{
+		DatabaseName: cr.Database,
 	})
-	defer session.Close(cr.Database.Ctx)
+	defer session.Close(cr.Ctx)
 
-	_, err := session.ExecuteRead(cr.Database.Ctx, cr.basicTransaction(readTransaction))
+	_, err := session.ExecuteRead(cr.Ctx, cr.basicTransaction(readTransaction))
 
 	if err != nil && readTransaction.OnRollback != nil {
 		readTransaction.OnRollback()
@@ -47,16 +43,16 @@ func (cr *CypherRepository) RunReadTransaction(readTransaction *CypherTransactio
 	if readTransaction.OnCommit != nil {
 		readTransaction.OnCommit()
 	}
-	return session.Close(cr.Database.Ctx)
+	return session.Close(cr.Ctx)
 }
 
 func (cr *CypherRepository) RunWriteTransaction(writeTransaction *CypherTransaction) error {
-	session := cr.Database.Driver.NewSession(cr.Database.Ctx, neo4j.SessionConfig{
-		DatabaseName: cr.Database.Database,
+	session := cr.Driver.NewSession(cr.Ctx, neo4j.SessionConfig{
+		DatabaseName: cr.Database,
 	})
-	defer session.Close(cr.Database.Ctx)
+	defer session.Close(cr.Ctx)
 
-	_, err := session.ExecuteWrite(cr.Database.Ctx, cr.basicTransaction(writeTransaction))
+	_, err := session.ExecuteWrite(cr.Ctx, cr.basicTransaction(writeTransaction))
 
 	if err != nil && writeTransaction.OnRollback != nil {
 		writeTransaction.OnRollback()
@@ -66,13 +62,13 @@ func (cr *CypherRepository) RunWriteTransaction(writeTransaction *CypherTransact
 	if writeTransaction.OnCommit != nil {
 		writeTransaction.OnCommit()
 	}
-	return session.Close(cr.Database.Ctx)
+	return session.Close(cr.Ctx)
 }
 
 func (cr *CypherRepository) basicTransaction(transaction *CypherTransaction) func(tx neo4j.ManagedTransaction) (any, error) {
 	return func(tx neo4j.ManagedTransaction) (any, error) {
 		for _, cypher := range transaction.Queries {
-			result, err := tx.Run(cr.Database.Ctx, cypher.Query, cypher.Params)
+			result, err := tx.Run(cr.Ctx, cypher.Query, cypher.Params)
 			if err != nil {
 				cypher.Error = cr.parseNeo4jError(err)
 				return nil, err
@@ -84,13 +80,13 @@ func (cr *CypherRepository) basicTransaction(transaction *CypherTransaction) fun
 				return nil, err
 			}
 
-			records, err := result.Collect(cr.Database.Ctx)
+			records, err := result.Collect(cr.Ctx)
 			if err != nil {
 				cypher.Error = cr.parseNeo4jError(err)
 				return nil, err
 			}
 
-			summary, err := result.Consume(cr.Database.Ctx)
+			summary, err := result.Consume(cr.Ctx)
 			if err != nil {
 				cypher.Error = cr.parseNeo4jError(err)
 				return nil, err
