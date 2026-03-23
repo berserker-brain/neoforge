@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/berserker-brain/neoforge"
+	"github.com/joho/godotenv"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/stretchr/testify/assert"
 )
@@ -13,6 +14,8 @@ import (
 var db neoforge.Neo4j
 
 func TestMain(m *testing.M) {
+	_ = godotenv.Load()
+
 	testDbName := os.Getenv("NEO4J_TEST_DATABASE")
 	if testDbName == "" {
 		testDbName = "neo4j"
@@ -39,7 +42,20 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// wipeTestDatabase removes all nodes and relationships so integration tests start from a known empty state.
+func wipeTestDatabase(t *testing.T) {
+	t.Helper()
+	repo := neoforge.NewCypherRepository(&db)
+	q := neoforge.CypherQuery{
+		Query: "MATCH (n) DETACH DELETE n",
+	}
+	repo.RunQuery(&q)
+	assert.NoError(t, q.Error)
+}
+
 func TestRunQuery(t *testing.T) {
+	wipeTestDatabase(t)
+
 	repo := neoforge.NewCypherRepository(&db)
 
 	query := neoforge.CypherQuery{
@@ -80,6 +96,8 @@ func TestRunQuery(t *testing.T) {
 }
 
 func TestRunReadTransaction(t *testing.T) {
+	wipeTestDatabase(t)
+
 	repo := neoforge.NewCypherRepository(&db)
 	commitCount := 0
 	rollbackCount := 0
@@ -159,6 +177,8 @@ func TestRunReadTransaction(t *testing.T) {
 }
 
 func TestRunWriteTransaction(t *testing.T) {
+	wipeTestDatabase(t)
+
 	repo := neoforge.NewCypherRepository(&db)
 	commitCount := 0
 	rollbackCount := 0
