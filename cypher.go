@@ -20,6 +20,7 @@ type CypherQuery struct {
 	//if true, it will return result as an empty slice with no error
 	EmptyOk bool
 	Stats   *Stats
+	Debug   bool
 }
 
 type CypherTransaction struct {
@@ -31,6 +32,11 @@ type CypherTransaction struct {
 func (cypher *CypherQuery) ParseResult(result *neo4j.EagerResult) {
 	if cypher.Result == nil {
 		return
+	}
+
+	if cypher.Debug {
+		fmt.Println("--------------------------------")
+		fmt.Println("Neoforge Debug Mode")
 	}
 
 	if len(result.Records) == 0 {
@@ -60,6 +66,10 @@ func (cypher *CypherQuery) ParseResult(result *neo4j.EagerResult) {
 
 		slice.Set(reflect.Append(slice, elem))
 	}
+
+	if cypher.Debug {
+		cypher.debugPrintResult(result, slice, elemType)
+	}
 }
 
 func (cypher *CypherQuery) validateResultStruct() {
@@ -69,7 +79,7 @@ func (cypher *CypherQuery) validateResultStruct() {
 	}
 
 	if resVal.Kind() != reflect.Slice {
-		cypher.Error = errors.New("result must be a slice of structs. Set CypherQuery.EmptyOk to true if you don't want results")
+		cypher.Error = errors.New("error with result struct: result must be a slice of structs. Set CypherQuery.EmptyOk to true if you don't want results")
 		return
 	}
 
@@ -79,7 +89,7 @@ func (cypher *CypherQuery) validateResultStruct() {
 	}
 
 	if elemType.Kind() != reflect.Struct {
-		cypher.Error = errors.New("slice elements must be structs")
+		cypher.Error = errors.New("error with result struct: slice elements must be structs")
 	}
 }
 
@@ -91,7 +101,7 @@ func (cypher *CypherQuery) handleStructElements(elem reflect.Value, elemType ref
 
 		key := structField.Tag.Get("key")
 		if key == "" {
-			cypher.Error = errors.New("no key tag found for field: " + structField.Name)
+			cypher.Error = errors.New("error with result struct: no key tag found for field: " + structField.Name)
 			return
 		}
 
@@ -295,6 +305,13 @@ func (cypher *CypherQuery) decodeValue(value any, field reflect.Value, structFie
 		// fallback (e.g., string, float64, etc.)
 		cypher.attemptAssignment(value, field, fieldType.Name(), structField.Name, key)
 	}
+	if cypher.Debug && cypher.Error != nil {
+		fmt.Println("      Raw Value From Neo4j: ", value)
+		fmt.Println("            Raw Value type: ", reflect.TypeOf(value))
+		fmt.Println("Key used to get from Neo4j: ", key)
+		fmt.Println("    Your Result Field Name: ", structField.Name)
+		fmt.Println("    Your Result Field Type: ", fieldType.Name())
+	}
 }
 
 func (cypher *CypherQuery) attemptAssignment(value any, field reflect.Value, fieldName string, structFieldName string, key string) bool {
@@ -304,4 +321,22 @@ func (cypher *CypherQuery) attemptAssignment(value any, field reflect.Value, fie
 	}
 	field.Set(reflect.ValueOf(value))
 	return true
+}
+
+func (cypher *CypherQuery) debugPrintResult(result *neo4j.EagerResult, slice reflect.Value, elemType reflect.Type) {
+	if cypher.Error != nil {
+		fmt.Println("NEOFORGE ERROR: ", cypher.Error)
+	}
+	fmt.Println("Result: ", slice.Interface())
+	fmt.Println("--------------------------------")
+	elemPtr := reflect.New(elemType)
+	elem := elemPtr.Elem()
+	keys := make([]string, 0)
+	for i := 0; i < elem.NumField(); i++ {
+		structField := elemType.Field(i)
+		keys = append(keys, structField.Tag.Get("key"))
+	}
+	fmt.Printf("Record Keys: %s\n", keys)
+
+	fmt.Println("Neo4j Keys: ", result.Keys, "\n# of Records: ", len(result.Records))
 }

@@ -17,7 +17,7 @@ type Stats struct {
 	NodesCreated         int
 	NodesDeleted         int
 	RelationshipsCreated int
-	RelationshipDeleted  int
+	RelationshipsDeleted int
 	PropertiesSet        int
 	LabelsAdded          int
 	LabelsRemoved        int
@@ -43,7 +43,7 @@ func (s *Stats) FromResultSummary(summary neo4j.ResultSummary) {
 		s.NodesCreated = sum.NodesCreated()
 		s.NodesDeleted = sum.NodesDeleted()
 		s.RelationshipsCreated = sum.RelationshipsCreated()
-		s.RelationshipDeleted = sum.RelationshipsDeleted()
+		s.RelationshipsDeleted = sum.RelationshipsDeleted()
 		s.PropertiesSet = sum.PropertiesSet()
 		s.LabelsAdded = sum.LabelsAdded()
 		s.LabelsRemoved = sum.LabelsRemoved()
@@ -69,8 +69,8 @@ func (s *Stats) Print() {
 	if s.RelationshipsCreated != 0 {
 		fmt.Printf("Relationships Created: %d\n", s.RelationshipsCreated)
 	}
-	if s.RelationshipDeleted != 0 {
-		fmt.Printf("Relationship Deleted: %d\n", s.RelationshipDeleted)
+	if s.RelationshipsDeleted != 0 {
+		fmt.Printf("Relationships Deleted: %d\n", s.RelationshipsDeleted)
 	}
 	if s.PropertiesSet != 0 {
 		fmt.Printf("Properties Set: %d\n", s.PropertiesSet)

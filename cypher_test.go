@@ -19,7 +19,7 @@ func TestParseResult_resultIsNotSlice(t *testing.T) {
 		}{},
 	}
 	query.ParseResult(mockNeo4jResult([]string{"key1", "key2"}, []any{1, "value2"}, 1))
-	assert.Equal(t, query.Error, errors.New("result must be a slice of structs. Set CypherQuery.EmptyOk to true if you don't want results"))
+	assert.Equal(t, query.Error, errors.New("error with result struct: result must be a slice of structs. Set CypherQuery.EmptyOk to true if you don't want results"))
 	assert.Error(t, query.Error)
 }
 
@@ -33,7 +33,7 @@ func TestParseResult_resultIsMissingCypherKeys(t *testing.T) {
 
 	query.ParseResult(mockNeo4jResult([]string{"key1", "key2"}, []any{1, "value2"}, 1))
 	assert.Error(t, query.Error)
-	assert.Equal(t, query.Error, errors.New("no key tag found for field: Key1"))
+	assert.Equal(t, query.Error, errors.New("error with result struct: no key tag found for field: Key1"))
 
 	query = neoforge.CypherQuery{
 		Result: &[]struct {
@@ -44,7 +44,7 @@ func TestParseResult_resultIsMissingCypherKeys(t *testing.T) {
 
 	query.ParseResult(mockNeo4jResult([]string{"key1", "key2"}, []any{1, "value2"}, 1))
 	assert.Error(t, query.Error)
-	assert.Equal(t, query.Error, errors.New("no key tag found for field: Key2"))
+	assert.Equal(t, query.Error, errors.New("error with result struct: no key tag found for field: Key2"))
 }
 
 func TestParseResult_catchesInvalidCypherKeys(t *testing.T) {
