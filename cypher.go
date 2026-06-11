@@ -9,6 +9,10 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
+// ErrNoRecords is returned by ParseResult when a query yields no records and
+// CypherQuery.EmptyOk is false. Compare against it with errors.Is.
+var ErrNoRecords = errors.New("no records found. Set CypherQuery.EmptyOk to true if results can be empty")
+
 type CypherQuery struct {
 	Query  string
 	Params map[string]any
@@ -41,7 +45,7 @@ func (cypher *CypherQuery) ParseResult(result *neo4j.EagerResult) {
 
 	if len(result.Records) == 0 {
 		if !cypher.EmptyOk {
-			cypher.Error = errors.New("no records found. Set CypherQuery.EmptyOk to true if results can be empty")
+			cypher.Error = ErrNoRecords
 			return
 		}
 		return
@@ -79,7 +83,7 @@ func (cypher *CypherQuery) validateResultStruct() {
 	}
 
 	if resVal.Kind() != reflect.Slice {
-		cypher.Error = errors.New("error with result struct: result must be a slice of structs. Set CypherQuery.EmptyOk to true if you don't want results")
+		cypher.Error = errors.New("error with result struct: result must be a slice of structs. Set CypherQuery.Result to nil if you don't want results")
 		return
 	}
 

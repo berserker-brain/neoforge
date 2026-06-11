@@ -19,7 +19,7 @@ func TestParseResult_resultIsNotSlice(t *testing.T) {
 		}{},
 	}
 	query.ParseResult(mockNeo4jResult([]string{"key1", "key2"}, []any{1, "value2"}, 1))
-	assert.Equal(t, query.Error, errors.New("error with result struct: result must be a slice of structs. Set CypherQuery.EmptyOk to true if you don't want results"))
+	assert.Equal(t, query.Error, errors.New("error with result struct: result must be a slice of structs. Set CypherQuery.Result to nil if you don't want results"))
 	assert.Error(t, query.Error)
 }
 
@@ -123,8 +123,7 @@ func TestParseResult_EmptyOkErrorsIfNoResultsAndEmptyOkIsFalse(t *testing.T) {
 	}
 
 	query.ParseResult(mockNeo4jResult([]string{}, []any{}, 0))
-	assert.Error(t, query.Error)
-	assert.Equal(t, query.Error, errors.New("no records found. Set CypherQuery.EmptyOk to true if results can be empty"))
+	assert.ErrorIs(t, query.Error, neoforge.ErrNoRecords)
 }
 
 func TestParseResult_AllowNoResultStructIfEmptyOkIsTrue(t *testing.T) {
