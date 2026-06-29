@@ -9,6 +9,18 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
+func RunQuickQuery[T any](cr *CypherRepository, query string, params map[string]any) ([]T, error) {
+	var out []T
+	q := CypherQuery{
+		Query:   query,
+		Params:  params,
+		Result:  &out,
+		EmptyOk: true,
+	}
+	cr.RunQuery(&q)
+	return out, q.Error
+}
+
 func ParseNode[T any](node neo4j.Node) (T, error) {
 	var t T
 	field := reflect.ValueOf(&t).Elem()
