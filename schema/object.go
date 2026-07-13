@@ -22,6 +22,16 @@ const (
 	KindIndex
 )
 
+// Scope selects whether an object targets a node label or a relationship type.
+// NodeScope is the zero value, so objects built before relationship support --
+// and every node constructor -- default to node scope with no changes.
+type Scope int
+
+const (
+	NodeScope Scope = iota
+	RelScope
+)
+
 // ConstraintKind enumerates the constraint flavors we generate. The string
 // values double as the suffix in a derived name (e.g. Business_name_unique).
 type ConstraintKind string
@@ -50,7 +60,12 @@ const (
 // SchemaObjects() escape hatch produce these; Apply consumes them.
 type Object struct {
 	Kind Kind
-	// Label is the single node label the element applies to. Required.
+	// Scope selects whether Label names a node label (NodeScope, the zero value)
+	// or a relationship type (RelScope). It controls the pattern rendered in DDL:
+	// (n:Label) for nodes, ()-[r:Label]-() for relationships.
+	Scope Scope
+	// Label is the single node label or relationship type the element applies to.
+	// Required.
 	Label string
 	// Properties are the Neo4j property names (json-tag values). One entry for
 	// simple tag-derived objects; multiple for composite constraints / fulltext.
@@ -74,14 +89,20 @@ type Object struct {
 }
 
 // Enterprise reports whether creating this object requires Neo4j Enterprise.
-// Uniqueness constraints and all plain indexes are available on Community;
-// node-key, existence, and property-type constraints are Enterprise-only.
+// For nodes, uniqueness constraints and all plain indexes are on Community while
+// node-key, existence, and property-type constraints are Enterprise-only. For
+// relationships, every constraint (including uniqueness) is Enterprise-only;
+// relationship indexes remain available on Community.
 func (o Object) Enterprise() bool {
-	if o.Kind == KindConstraint {
-		switch o.Constraint {
-		case NodeKey, Exists, PropType:
-			return true
-		}
+	if o.Kind != KindConstraint {
+		return false
+	}
+	if o.Scope == RelScope {
+		return true // all relationship constraints are Enterprise-only
+	}
+	switch o.Constraint {
+	case NodeKey, Exists, PropType:
+		return true
 	}
 	return false
 }
@@ -139,4 +160,37 @@ func FullText(label string, properties []string, options string) Object {
 func Vector(label, property string, dimensions int, similarity string) Object {
 	opts := fmt.Sprintf("OPTIONS { indexConfig: { `vector.dimensions`: %d, `vector.similarity_function`: '%s' } }", dimensions, similarity)
 	return Object{Kind: KindIndex, Index: VectorIndex, Label: label, Properties: []string{property}, Options: opts}
+}
+
+// -- Relationship escape-hatch constructors -----------------------------------
+// These mirror the node constructors but target a relationship type. relType may
+// be left empty when returned from a RelLabeler model's SchemaObjects(); Walk
+// fills it from GetRelType(). Every relationship constraint is Enterprise-only.
+
+// RelUniqueConstraint builds a (possibly composite) relationship uniqueness constraint. Enterprise.
+func RelUniqueConstraint(relType string, properties ...string) Object {
+	return Object{Kind: KindConstraint, Constraint: Unique, Scope: RelScope, Label: relType, Properties: properties}
+}
+
+// RelKeyConstraint builds a (possibly composite) relationship key constraint. Enterprise.
+func RelKeyConstraint(relType string, properties ...string) Object {
+	return Object{Kind: KindConstraint, Constraint: NodeKey, Scope: RelScope, Label: relType, Properties: properties}
+}
+
+// RelExistsConstraint builds a single-property relationship existence constraint. Enterprise.
+func RelExistsConstraint(relType, property string) Object {
+	return Object{Kind: KindConstraint, Constraint: Exists, Scope: RelScope, Label: relType, Properties: []string{property}}
+}
+
+// RelFullText builds a full-text index over one or more relationship properties.
+// options, when non-empty, must be a complete "OPTIONS { ... }" clause.
+func RelFullText(relType string, properties []string, options string) Object {
+	return Object{Kind: KindIndex, Index: FullTextIndex, Scope: RelScope, Label: relType, Properties: properties, Options: options}
+}
+
+// RelVector builds a vector index on a single relationship property with the
+// given dimensions and similarity function (e.g. "cosine").
+func RelVector(relType, property string, dimensions int, similarity string) Object {
+	opts := fmt.Sprintf("OPTIONS { indexConfig: { `vector.dimensions`: %d, `vector.similarity_function`: '%s' } }", dimensions, similarity)
+	return Object{Kind: KindIndex, Index: VectorIndex, Scope: RelScope, Label: relType, Properties: []string{property}, Options: opts}
 }

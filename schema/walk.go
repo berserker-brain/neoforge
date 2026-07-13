@@ -6,11 +6,20 @@ import (
 	"strings"
 )
 
-// Labeler is implemented by every model that contributes schema. The returned
-// label is the single node label constraints/indexes are declared against.
-// Walk refuses (with an error) to process a model that does not implement it.
+// Labeler is implemented by every node model that contributes schema. The
+// returned label is the single node label constraints/indexes are declared
+// against. Walk refuses (with an error) to process a model that implements
+// neither Labeler nor RelLabeler.
 type Labeler interface {
 	GetLabel() string
+}
+
+// RelLabeler is implemented by relationship models that contribute schema. The
+// returned type is the single relationship type constraints/indexes are declared
+// against. A model implements Labeler or RelLabeler, not both; if it implements
+// both, Labeler (node scope) wins.
+type RelLabeler interface {
+	GetRelType() string
 }
 
 // Provider is the optional escape hatch for schema that a single-property tag
@@ -31,18 +40,27 @@ func Walk(models []any) ([]Object, []error) {
 	var errs []error
 
 	for _, m := range models {
-		labeler, ok := m.(Labeler)
-		if !ok {
-			errs = append(errs, fmt.Errorf("schema: %T does not implement Labeler (GetLabel); cannot contribute schema", m))
-			continue
-		}
-		label := labeler.GetLabel()
-		if label == "" {
-			errs = append(errs, fmt.Errorf("schema: %T.GetLabel() returned an empty label", m))
+		var label string
+		var scope Scope
+		switch labeler := m.(type) {
+		case Labeler:
+			label, scope = labeler.GetLabel(), NodeScope
+			if label == "" {
+				errs = append(errs, fmt.Errorf("schema: %T.GetLabel() returned an empty label", m))
+				continue
+			}
+		case RelLabeler:
+			label, scope = labeler.GetRelType(), RelScope
+			if label == "" {
+				errs = append(errs, fmt.Errorf("schema: %T.GetRelType() returned an empty relationship type", m))
+				continue
+			}
+		default:
+			errs = append(errs, fmt.Errorf("schema: %T implements neither Labeler (GetLabel) nor RelLabeler (GetRelType); cannot contribute schema", m))
 			continue
 		}
 
-		objs, tagErrs := walkTags(m, label)
+		objs, tagErrs := walkTags(m, label, scope)
 		objects = append(objects, objs...)
 		errs = append(errs, tagErrs...)
 
@@ -60,7 +78,7 @@ func Walk(models []any) ([]Object, []error) {
 }
 
 // walkTags scans a single struct's fields for `neo` tags.
-func walkTags(m any, label string) ([]Object, []error) {
+func walkTags(m any, label string, scope Scope) ([]Object, []error) {
 	v := reflect.ValueOf(m)
 	for v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -91,7 +109,7 @@ func walkTags(m any, label string) ([]Object, []error) {
 			if directive == "" {
 				continue
 			}
-			obj, err := directiveToObject(directive, label, prop, field)
+			obj, err := directiveToObject(directive, label, prop, field, scope)
 			if err != nil {
 				errs = append(errs, err)
 				continue
@@ -143,23 +161,25 @@ func subsumeRedundant(objs []Object) []Object {
 	return out
 }
 
-// directiveToObject maps one comma-separated tag token to an Object.
-func directiveToObject(directive, label, prop string, field reflect.StructField) (Object, error) {
+// directiveToObject maps one comma-separated tag token to an Object. scope is
+// stamped onto every returned object so the same tag vocabulary produces node or
+// relationship schema depending on the model's interface.
+func directiveToObject(directive, label, prop string, field reflect.StructField, scope Scope) (Object, error) {
 	name, arg, _ := strings.Cut(directive, ":")
 
 	switch name {
 	case "unique":
-		return Object{Kind: KindConstraint, Constraint: Unique, Label: label, Properties: []string{prop}}, nil
+		return Object{Kind: KindConstraint, Constraint: Unique, Scope: scope, Label: label, Properties: []string{prop}}, nil
 	case "key":
-		return Object{Kind: KindConstraint, Constraint: NodeKey, Label: label, Properties: []string{prop}}, nil
+		return Object{Kind: KindConstraint, Constraint: NodeKey, Scope: scope, Label: label, Properties: []string{prop}}, nil
 	case "exists":
-		return Object{Kind: KindConstraint, Constraint: Exists, Label: label, Properties: []string{prop}}, nil
+		return Object{Kind: KindConstraint, Constraint: Exists, Scope: scope, Label: label, Properties: []string{prop}}, nil
 	case "type":
 		pt, err := neoType(field.Type)
 		if err != nil {
 			return Object{}, fmt.Errorf("schema: %s.%s: %w", label, prop, err)
 		}
-		return Object{Kind: KindConstraint, Constraint: PropType, Label: label, Properties: []string{prop}, PropType: pt}, nil
+		return Object{Kind: KindConstraint, Constraint: PropType, Scope: scope, Label: label, Properties: []string{prop}, PropType: pt}, nil
 	case "index":
 		ik := RangeIndex
 		switch arg {
@@ -172,7 +192,7 @@ func directiveToObject(directive, label, prop string, field reflect.StructField)
 		default:
 			return Object{}, fmt.Errorf("schema: %s.%s: unknown index type %q (want range|text|point; fulltext/vector go through SchemaObjects)", label, prop, arg)
 		}
-		return Object{Kind: KindIndex, Index: ik, Label: label, Properties: []string{prop}}, nil
+		return Object{Kind: KindIndex, Index: ik, Scope: scope, Label: label, Properties: []string{prop}}, nil
 	default:
 		return Object{}, fmt.Errorf("schema: %s.%s: unknown neo directive %q", label, prop, directive)
 	}

@@ -5,8 +5,23 @@ import (
 	"strings"
 )
 
-// nodeVar is the pattern variable used in generated DDL.
-const nodeVar = "n"
+// varName returns the pattern variable used in generated DDL: "n" for a node,
+// "r" for a relationship.
+func (o Object) varName() string {
+	if o.Scope == RelScope {
+		return "r"
+	}
+	return "n"
+}
+
+// forPattern renders the "FOR ..." target: "(n:Label)" for a node, or
+// "()-[r:Type]-()" for a relationship.
+func (o Object) forPattern() string {
+	if o.Scope == RelScope {
+		return fmt.Sprintf("()-[%s:%s]-()", o.varName(), o.Label)
+	}
+	return fmt.Sprintf("(%s:%s)", o.varName(), o.Label)
+}
 
 // Cypher renders the CREATE statement for this object. All statements use
 // IF NOT EXISTS so Apply is idempotent and additive.
@@ -29,13 +44,13 @@ func (o Object) Cypher() (string, error) {
 
 func (o Object) constraintCypher() (string, error) {
 	name := o.DerivedName()
-	head := fmt.Sprintf("CREATE CONSTRAINT %s IF NOT EXISTS FOR (%s:%s) REQUIRE ", name, nodeVar, o.Label)
+	head := fmt.Sprintf("CREATE CONSTRAINT %s IF NOT EXISTS FOR %s REQUIRE ", name, o.forPattern())
 
 	switch o.Constraint {
 	case Unique:
 		return head + o.propExpr() + " IS UNIQUE", nil
 	case NodeKey:
-		return head + o.propExpr() + " IS NODE KEY", nil
+		return head + o.propExpr() + " IS " + o.keyKeyword(), nil
 	case Exists:
 		if len(o.Properties) != 1 {
 			return "", fmt.Errorf("schema: %s: existence constraints are single-property only", name)
@@ -54,6 +69,15 @@ func (o Object) constraintCypher() (string, error) {
 	}
 }
 
+// keyKeyword returns the REQUIRE keyword for a key constraint: "NODE KEY" for a
+// node, "RELATIONSHIP KEY" for a relationship.
+func (o Object) keyKeyword() string {
+	if o.Scope == RelScope {
+		return "RELATIONSHIP KEY"
+	}
+	return "NODE KEY"
+}
+
 func (o Object) indexCypher() (string, error) {
 	name := o.DerivedName()
 
@@ -63,18 +87,18 @@ func (o Object) indexCypher() (string, error) {
 			return "", fmt.Errorf("schema: %s: %s indexes are single-property only", name, o.Index)
 		}
 		refs := o.propRefs()
-		return fmt.Sprintf("CREATE %s INDEX %s IF NOT EXISTS FOR (%s:%s) ON (%s)",
-			strings.ToUpper(string(o.Index)), name, nodeVar, o.Label, strings.Join(refs, ", ")), nil
+		return fmt.Sprintf("CREATE %s INDEX %s IF NOT EXISTS FOR %s ON (%s)",
+			strings.ToUpper(string(o.Index)), name, o.forPattern(), strings.Join(refs, ", ")), nil
 	case FullTextIndex:
-		stmt := fmt.Sprintf("CREATE FULLTEXT INDEX %s IF NOT EXISTS FOR (%s:%s) ON EACH [%s]",
-			name, nodeVar, o.Label, strings.Join(o.propRefs(), ", "))
+		stmt := fmt.Sprintf("CREATE FULLTEXT INDEX %s IF NOT EXISTS FOR %s ON EACH [%s]",
+			name, o.forPattern(), strings.Join(o.propRefs(), ", "))
 		return o.withOptions(stmt), nil
 	case VectorIndex:
 		if len(o.Properties) != 1 {
 			return "", fmt.Errorf("schema: %s: vector indexes are single-property only", name)
 		}
-		stmt := fmt.Sprintf("CREATE VECTOR INDEX %s IF NOT EXISTS FOR (%s:%s) ON (%s)",
-			name, nodeVar, o.Label, o.propRef(o.Properties[0]))
+		stmt := fmt.Sprintf("CREATE VECTOR INDEX %s IF NOT EXISTS FOR %s ON (%s)",
+			name, o.forPattern(), o.propRef(o.Properties[0]))
 		return o.withOptions(stmt), nil
 	default:
 		return "", fmt.Errorf("schema: %s: unknown index kind %q", name, o.Index)
@@ -88,12 +112,12 @@ func (o Object) withOptions(stmt string) string {
 	return stmt + " " + o.Options
 }
 
-// propRef renders a single "n.prop" reference.
+// propRef renders a single "n.prop" (node) or "r.prop" (relationship) reference.
 func (o Object) propRef(prop string) string {
-	return nodeVar + "." + prop
+	return o.varName() + "." + prop
 }
 
-// propRefs renders every property as "n.prop".
+// propRefs renders every property as "n.prop" / "r.prop".
 func (o Object) propRefs() []string {
 	refs := make([]string, len(o.Properties))
 	for i, p := range o.Properties {
